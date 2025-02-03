@@ -1,0 +1,47 @@
+﻿using Basket.API.Models;
+using Microsoft.Extensions.Caching.Distributed;
+using System.Text.Json;
+
+namespace Basket.API.Data
+{
+    // PAtterns Proxy and decorator pattern are implemented in this class.
+    // Cached Basket here acts as a proxy and forwards the calls to the BasketRepository. 
+    // Decoorator pattern is used here to extend the logic of BasketRepostory
+    // By adding caching mechanism.
+    public class CachedBasketRepository(IBasketRepository repository, IDistributedCache cache) 
+        : IBasketRepository
+    {
+        public async Task<bool> DeleteBasket(string userName, CancellationToken cancellationToken = default)
+        {
+            await repository.DeleteBasket(userName, cancellationToken);
+
+            await cache.RemoveAsync(userName, cancellationToken);
+
+            return true;
+        }
+
+        public async Task<ShoppingCart> GetBasket(string userName, CancellationToken cancellationToken = default)
+        {
+            var cachedBasket = await cache.GetStringAsync(userName, cancellationToken);
+            if (!string.IsNullOrEmpty(cachedBasket))
+            {
+                return JsonSerializer.Deserialize<ShoppingCart>(cachedBasket)!;
+            }
+
+
+            var basket =  await repository.GetBasket(userName, cancellationToken);
+            await cache.SetStringAsync(userName, JsonSerializer.Serialize(basket),cancellationToken);
+
+            return basket;
+        }
+
+        public async Task<ShoppingCart> StoreBasket(ShoppingCart basket, CancellationToken cancellationToken = default)
+        {
+            await repository.StoreBasket(basket, cancellationToken);
+
+            await cache.SetStringAsync(basket.UserName, JsonSerializer.Serialize(basket), cancellationToken);
+
+            return basket;
+        }
+    }
+}
